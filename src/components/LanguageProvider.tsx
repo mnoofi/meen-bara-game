@@ -11,7 +11,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     lang,
     setLang,
     t: (key: string, vars?: Record<string, string>) => {
-      let str = LANGUAGES[lang].t[key] || key;
+      let str = (LANGUAGES[lang].t as Record<string, string>)[key] || key;
       if (vars) Object.entries(vars).forEach(([k, v]) => { str = str.replace(`{${k}}`, v); });
       return str;
     },
