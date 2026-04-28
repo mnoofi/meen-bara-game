@@ -1,8 +1,17 @@
 // src/words.ts
-// Simple word bank for the game. You can expand this list.
-export const WORDS = [
-  'Apple', 'Football', 'Pyramid', 'River', 'School', 'Camera', 'Desert', 'Pizza',
-  'Market', 'Doctor', 'Library', 'Train', 'Garden', 'Bridge', 'Computer', 'Moon',
-  'Coffee', 'Hotel', 'Airport', 'Mountain', 'Car', 'Book', 'Phone', 'Chair',
-  'Beach', 'Restaurant', 'Hospital', 'Bank', 'Zoo', 'Museum', 'Park', 'Cinema',
+// قاموس اللعبة مقسم لفئات بالعربي
+export const CATEGORIES = [
+  { key: "clothes", label: "ملابس" },
+  { key: "jobs", label: "وظائف" },
+  { key: "food", label: "أكل" },
+  { key: "adult", label: "+18" },
+  { key: "things", label: "أشياء/جماد" },
 ];
+
+export const WORDS = {
+  clothes: ["قميص", "بنطلون", "جاكيت", "فستان", "حذاء", "قبعة", "تيشيرت", "بدلة"],
+  jobs: ["طبيب", "مهندس", "مدرس", "محامي", "شرطي", "ممرض", "سائق", "مزارع"],
+  food: ["بيتزا", "كشري", "فول", "شاورما", "رز", "سمك", "دجاج", "بطاطس"],
+  adult: ["سيجارة", "خمر", "حبوب", "ملهى", "راقصة", "كازينو", "مخدرات"],
+  things: ["كرسي", "مكتب", "باب", "نافذة", "هاتف", "كمبيوتر", "سيارة", "ساعة"]
+};

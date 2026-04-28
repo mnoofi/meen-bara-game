@@ -1,6 +1,7 @@
 // src/app/room/[id]/page.tsx
 'use client';
 import { useEffect, useState } from 'react';
+import { CATEGORIES, WORDS } from '@/words';
 import { useRouter, useParams } from 'next/navigation';
 import { auth, db } from '@/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -78,37 +79,7 @@ export default function RoomPage() {
           </ul>
         </div>
         {user && user.uid === room.hostId && room.status === 'waiting' && (
-          <button
-            className="bg-gradient-to-r from-green-600 to-blue-500 text-white py-2 px-6 rounded-full font-bold hover:from-green-700 hover:to-blue-600 transition w-full shadow-lg text-lg"
-            onClick={async () => {
-              // Only allow if enough players
-              if (room.players.length < 4) {
-                alert('يجب أن يكون هناك 4 لاعبين على الأقل.');
-                return;
-              }
-              // Select secret word and out-of-loop players
-              const { WORDS } = await import('@/words');
-              const secretWord = WORDS[Math.floor(Math.random() * WORDS.length)];
-              const outCount = 1; // You can make this configurable
-              const shuffled = [...room.players].sort(() => Math.random() - 0.5);
-              const outPlayers = shuffled.slice(0, outCount).map(p => p.uid);
-              // Update Firestore
-              const { doc, updateDoc } = await import('firebase/firestore');
-              const roomRef = doc(db, 'rooms', room.roomId);
-              await updateDoc(roomRef, {
-                secretWord,
-                outPlayers,
-                gameState: 'roles',
-                responses: [],
-                votes: [],
-                round: (room.round || 1),
-                status: 'started',
-              });
-              router.push(`/room/${room.roomId}/game`);
-            }}
-          >
-            Start Game
-          </button>
+          <CategorySelector room={room} router={router} />
         )}
         {room.status === 'started' && (
           <button
@@ -119,6 +90,63 @@ export default function RoomPage() {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// مكون اختيار الفئة وبدء اللعبة للأونلاين (خارج RoomPage)
+type CategorySelectorProps = { room: any; router: ReturnType<typeof useRouter> };
+function CategorySelector({ room, router }: CategorySelectorProps) {
+  const [selectedCat, setSelectedCat] = useState<string>(CATEGORIES[0].key);
+  const [starting, setStarting] = useState(false);
+
+  return (
+    <div className="flex flex-col gap-4 items-center">
+      <div className="mb-2 font-bold">اختر الفئة للكلمة السرية:</div>
+      <select
+        className="border rounded-lg px-4 py-2 text-lg"
+        value={selectedCat}
+        onChange={e => setSelectedCat(e.target.value)}
+        disabled={starting}
+      >
+        {CATEGORIES.map(cat => (
+          <option key={cat.key} value={cat.key}>{cat.label}</option>
+        ))}
+      </select>
+      <button
+        className="bg-gradient-to-r from-green-600 to-blue-500 text-white py-2 px-6 rounded-full font-bold hover:from-green-700 hover:to-blue-600 transition w-full shadow-lg text-lg"
+        disabled={starting}
+        onClick={async () => {
+          setStarting(true);
+          if (room.players.length < 4) {
+            alert('يجب أن يكون هناك 4 لاعبين على الأقل.');
+            setStarting(false);
+            return;
+          }
+          // اختيار كلمة عشوائية من الفئة
+          const words = WORDS[selectedCat as keyof typeof WORDS] || [];
+          const secretWord = words[Math.floor(Math.random() * words.length)] || 'كلمة';
+          const outCount = 1;
+          const shuffled = [...room.players].sort(() => Math.random() - 0.5);
+          const outPlayers = shuffled.slice(0, outCount).map((p: any) => p.uid);
+          // حفظ الفئة المختارة مع بيانات الغرفة
+          const { doc, updateDoc } = await import('firebase/firestore');
+          const roomRef = doc(db, 'rooms', room.roomId);
+          await updateDoc(roomRef, {
+            secretCategory: selectedCat,
+            secretWord,
+            outPlayers,
+            gameState: 'roles',
+            responses: [],
+            votes: [],
+            round: (room.round || 1),
+            status: 'started',
+          });
+          router.push(`/room/${room.roomId}/game`);
+        }}
+      >
+        بدء اللعبة
+      </button>
     </div>
   );
 }

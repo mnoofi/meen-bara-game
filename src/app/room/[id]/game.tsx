@@ -52,7 +52,6 @@ export default function GameController() {
   // PHASE 1: Role Distribution
   if (room.gameState === 'roles') {
     const [continued, setContinued] = useState(false);
-    // Track who continued
     useEffect(() => {
       if (!continued) return;
       const markContinue = async () => {
@@ -64,7 +63,6 @@ export default function GameController() {
       };
       markContinue();
     }, [continued]);
-    // Move to next phase if all continued
     useEffect(() => {
       if (room.continued?.length === room.players.length) {
         const next = async () => {
@@ -78,21 +76,27 @@ export default function GameController() {
         next();
       }
     }, [room.continued, room.players.length, roomId]);
+    // عرض صورة اللاعب ودوره
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md text-center">
-          <h2 className="text-2xl font-bold mb-4">Your Role</h2>
+          <img
+            src={user.photoURL || '/default-avatar.png'}
+            alt={user.displayName || 'player'}
+            className="w-20 h-20 rounded-full mx-auto mb-4 border-4 border-blue-200"
+          />
+          <h2 className="text-2xl font-bold mb-2">{user.displayName || 'لاعب'}</h2>
           {isOut ? (
-            <div className="text-xl mb-4">You are <span className="font-bold text-red-600">out of the loop</span>!</div>
+            <div className="text-xl mb-4 text-red-600 font-bold">أنت برا السالفة!</div>
           ) : (
-            <div className="text-xl mb-4">Secret Word: <span className="font-bold text-green-600">{room.secretWord}</span></div>
+            <div className="text-xl mb-4">الكلمة السرية: <span className="font-bold text-green-600">{room.secretWord}</span></div>
           )}
           <button
             className="bg-blue-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-blue-700 transition mt-4"
             onClick={() => setContinued(true)}
             disabled={continued}
           >
-            {continued ? 'Waiting for others...' : 'Continue'}
+            {continued ? 'بانتظار باقي اللاعبين...' : 'استمرار'}
           </button>
         </div>
       </div>
@@ -101,17 +105,91 @@ export default function GameController() {
 
   // PHASE 2: Turn-Based Word Submission
   if (room.gameState === 'playing') {
+    // منطق الدور العشوائي - يجب أن يكون أول شيء
+    const [askOrder, setAskOrder] = useState(room.askOrder || []);
+    const [currentIndex, setCurrentIndex] = useState(room.askIndex ?? 0);
+    const [roundCount, setRoundCount] = useState(room.roundCount ?? 1);
+    // باقي المتغيرات
+    const [showPopup, setShowPopup] = useState(false);
     const [word, setWord] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
     const responses = room.responses || [];
-    const myTurn = responses.length < room.players.length && room.players[responses.length].uid === user.uid;
+    // نافذة منبثقة بعد دورتين
+    useEffect(() => {
+      if (askOrder.length && currentIndex >= askOrder.length && roundCount >= 2) {
+        setShowPopup(true);
+      }
+    }, [askOrder, currentIndex, roundCount]);
+
+    const handleVoteNow = async () => {
+      setShowPopup(false);
+      const { updateDoc, doc } = await import('firebase/firestore');
+      const roomRef = doc(db, 'rooms', roomId);
+      await updateDoc(roomRef, {
+        gameState: 'voting',
+        askOrder: [],
+        askIndex: 0,
+        roundCount: 1,
+      });
+    };
+    const handleWait = () => {
+      setShowPopup(false);
+    };
+    // إذا لم يوجد ترتيب، أنشئ ترتيب عشوائي
+    useEffect(() => {
+      if (!askOrder.length && room.players) {
+        const shuffled = [...room.players].map(p => p.uid).sort(() => Math.random() - 0.5);
+        setAskOrder(shuffled);
+        setCurrentIndex(0);
+      }
+    }, [room.players]);
+    // اللاعب الحالي الذي عليه الدور
+    const currentUid = askOrder[currentIndex];
+    const myTurn = user.uid === currentUid;
     const hasSubmitted = responses.some((r: any) => r.uid === user.uid);
+    // عند انتهاء كل اللاعبين، أعد ترتيب جديد وابدأ دورة جديدة
+    useEffect(() => {
+      if (askOrder.length && currentIndex >= askOrder.length) {
+        // إذا أكملنا دورتين، انتقل للتصويت
+        if (roundCount >= 2) {
+          const moveToVote = async () => {
+            const { updateDoc, doc } = await import('firebase/firestore');
+            const roomRef = doc(db, 'rooms', roomId);
+            await updateDoc(roomRef, {
+              gameState: 'voting',
+              askOrder: [],
+              askIndex: 0,
+              roundCount: 1,
+            });
+          };
+          moveToVote();
+        } else {
+          // دورة جديدة
+          const shuffled = [...room.players].map(p => p.uid).sort(() => Math.random() - 0.5);
+          setAskOrder(shuffled);
+          setCurrentIndex(0);
+          setRoundCount(roundCount + 1);
+          // حفظ في قاعدة البيانات
+          const saveOrder = async () => {
+            const { updateDoc, doc } = await import('firebase/firestore');
+            const roomRef = doc(db, 'rooms', roomId);
+            await updateDoc(roomRef, {
+              askOrder: shuffled,
+              askIndex: 0,
+              roundCount: roundCount + 1,
+            });
+          };
+          saveOrder();
+        }
+      }
+    }, [currentIndex, askOrder, roundCount, room.players, roomId]);
+    // عند إرسال الإجابة
     const handleSubmit = async (e: any) => {
       e.preventDefault();
       setErrorMsg('');
       if (!/^[\p{L}0-9]+$/u.test(word.trim()) || word.trim().split(/\s+/).length > 1) {
-        setErrorMsg('Enter one word only.');
+        setErrorMsg('أدخل كلمة واحدة فقط.');
         return;
       }
       setSubmitting(true);
@@ -119,32 +197,29 @@ export default function GameController() {
       const roomRef = doc(db, 'rooms', roomId);
       await updateDoc(roomRef, {
         responses: arrayUnion({ uid: user.uid, word: word.trim() }),
+        askIndex: currentIndex + 1,
       });
       setSubmitting(false);
+      setWord('');
     };
-    // Move to voting phase
-    useEffect(() => {
-      if (responses.length === room.players.length) {
-        const next = async () => {
-          const { updateDoc, doc } = await import('firebase/firestore');
-          const roomRef = doc(db, 'rooms', roomId);
-          await updateDoc(roomRef, {
-            gameState: 'voting',
-          });
-        };
-        next();
-      }
-    }, [responses.length, room.players.length, roomId]);
+    // اسم اللاعب الحالي
+    const currentPlayer = room.players?.find((p: any) => p.uid === currentUid);
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md text-center">
-          <h2 className="text-2xl font-bold mb-4">Describe the word</h2>
-          <div className="mb-2 text-gray-500">Each player submits one word related to the secret word.</div>
+        <div className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md text-center relative">
+          <h2 className="text-2xl font-bold mb-4">دور الأسئلة</h2>
+          <div className="mb-2 text-gray-700">اللاعب الحالي الذي عليه الدور:</div>
+          {currentPlayer && (
+            <div className="flex flex-col items-center mb-4">
+              <img src={currentPlayer.photoURL || '/default-avatar.png'} alt={currentPlayer.name} className="w-16 h-16 rounded-full mb-2 border-2 border-blue-300" />
+              <span className="font-bold text-lg text-blue-700">{currentPlayer.name}</span>
+            </div>
+          )}
           {myTurn ? (
             <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-4">
               <input
                 className="border rounded-lg px-4 py-2 text-center text-lg"
-                placeholder="Enter one word"
+                placeholder="اكتب سؤالك (كلمة واحدة)"
                 value={word}
                 onChange={e => setWord(e.target.value.replace(/[^\p{L}0-9]/gu, ''))}
                 maxLength={20}
@@ -157,22 +232,41 @@ export default function GameController() {
                 type="submit"
                 disabled={submitting}
               >
-                Submit
+                تم
               </button>
             </form>
-          ) : hasSubmitted ? (
-            <div className="mt-4 text-green-600">Submitted! Waiting for others...</div>
           ) : (
-            <div className="mt-4 text-gray-500">Waiting for your turn...</div>
+            <div className="mt-4 text-gray-500">بانتظار {currentPlayer?.name} ليكتب سؤاله...</div>
           )}
           <div className="mt-6">
-            <h3 className="font-semibold mb-2">Submitted Words</h3>
+            <h3 className="font-semibold mb-2">الأسئلة المكتوبة</h3>
             <ul className="flex flex-col gap-1">
               {responses.map((r: any, i: number) => (
                 <li key={i} className="text-gray-700">{room.players.find((p: any) => p.uid === r.uid)?.name}: <span className="font-bold">{r.word}</span></li>
               ))}
             </ul>
           </div>
+          {/* نافذة منبثقة بعد دورتين */}
+          {showPopup && (
+            <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+              <div className="bg-white rounded-xl shadow-2xl p-8 max-w-xs w-full text-center">
+                <h3 className="text-xl font-bold mb-4">انتهت دورتين من الأسئلة!</h3>
+                <div className="mb-4">هل تريدون بدء التصويت الآن أم الانتظار قليلاً؟</div>
+                <button
+                  className="bg-green-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-green-700 transition mb-2 w-full"
+                  onClick={handleVoteNow}
+                >
+                  يلا نصوت
+                </button>
+                <button
+                  className="bg-gray-300 text-gray-800 py-2 px-6 rounded-lg font-semibold hover:bg-gray-400 transition w-full"
+                  onClick={handleWait}
+                >
+                  لسا شوية
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -222,7 +316,7 @@ export default function GameController() {
                   onClick={() => handleVote(p.uid)}
                   disabled={voted || hasVoted || p.uid === user.uid}
                 >
-                  <img src={p.photoURL} alt={p.name} className="w-6 h-6 rounded-full" />
+                  <img src={p.photoURL || '/default-avatar.png'} alt={p.name} className="w-6 h-6 rounded-full" />
                   {p.name}
                 </button>
               ))}
@@ -292,7 +386,10 @@ export default function GameController() {
     // Next round
     const handleNextRound = async () => {
       const { WORDS } = await import('@/words');
-      const secretWord = WORDS[Math.floor(Math.random() * WORDS.length)];
+      // استخدم نفس الفئة المختارة في الغرفة
+      const category: keyof typeof WORDS = (room.secretCategory as keyof typeof WORDS) || Object.keys(WORDS)[0] as keyof typeof WORDS;
+      const words = WORDS[category] || [];
+      const secretWord = words[Math.floor(Math.random() * words.length)] || 'كلمة';
       const outCount = 1;
       const shuffled = [...room.players].sort(() => Math.random() - 0.5);
       const outPlayers = shuffled.slice(0, outCount).map(p => p.uid);
